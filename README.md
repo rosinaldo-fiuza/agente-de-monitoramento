@@ -17,7 +17,7 @@ Este projeto consiste em um sistema de monitoramento com:
 
 ## Estrutura do Projeto
 
-\`\`\`
+```
 dashboard-monitoramento/
 ├── agent/                  # Agente para Windows
 │   ├── agent_windows.py    # Código do agente
@@ -46,7 +46,7 @@ dashboard-monitoramento/
 │   ├── js/                 # JavaScript
 │   └── index.html          # Página principal
 └── README.md               # Este arquivo
-\`\`\`
+```
 
 ## Requisitos
 
@@ -65,44 +65,44 @@ dashboard-monitoramento/
 ### Servidor Debian
 
 1. Clone este repositório:
-   \`\`\`bash
+   ```bash
    git clone https://github.com/seu-usuario/dashboard-monitoramento.git
    cd dashboard-monitoramento
-   \`\`\`
+   ```
 
 2. Execute o script de instalação:
-   \`\`\`bash
+   ```bash
    chmod +x debian/install.sh
    sudo ./debian/install.sh
-   \`\`\`
+   ```
 
 3. Verifique se todos os serviços estão em execução:
-   \`\`\`bash
+   ```bash
    sudo ./debian/status.sh
-   \`\`\`
+   ```
 
 ### Cliente Windows
 
 1. Copie a pasta `agent` para o computador Windows
 
 2. Edite o arquivo `config.yaml` e atualize o IP do servidor Debian:
-   \`\`\`yaml
+   ```yaml
    rabbitmq:
      host: "192.168.1.100"  # Substitua pelo IP do seu servidor Debian
    
    dashboard:
      url: "http://192.168.1.100"  # Substitua pelo IP do seu servidor Debian
-   \`\`\`
+   ```
 
 3. Execute o script de instalação:
-   \`\`\`
+   ```
    install.bat
-   \`\`\`
+   ```
 
 4. Para iniciar o agente manualmente:
-   \`\`\`
+   ```
    run.bat
-   \`\`\`
+   ```
 
 ## Uso
 
@@ -154,7 +154,7 @@ dashboard-monitoramento/
 
 ## Variáveis de Ambiente
 
-\`\`\`
+```
 # Configurações do servidor
 PORT=3000
 NODE_ENV=development
@@ -174,7 +174,7 @@ POSTGRES_PORT=5432
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=monitoring_dashboard
-\`\`\`
+```
 
 ## API Endpoints
 
