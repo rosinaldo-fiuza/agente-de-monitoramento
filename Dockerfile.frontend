@@ -1,0 +1,10 @@
+FROM nginx:alpine
+
+# Copiar arquivos estáticos
+COPY frontend/ /usr/share/nginx/html/
+
+# Expor porta
+EXPOSE 80
+
+# Comando para iniciar o Nginx
+CMD ["nginx", "-g", "daemon off;"]

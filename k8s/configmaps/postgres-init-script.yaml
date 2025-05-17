@@ -1,0 +1,693 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: monitoring-dashboard
+data:
+  schema.sql: |
+    -- Inicialização do banco de dados
+    -- Este script será executado na primeira inicialização do PostgreSQL
+
+    -- Criar extensões necessárias
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+
+    -- Tabela de agentes
+    CREATE TABLE IF NOT EXISTS agents (
+        agent_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        hostname VARCHAR(255) NOT NULL,
+        agent_version VARCHAR(50),
+        os_info JSONB,
+        first_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        is_active BOOLEAN DEFAULT TRUE
+    );
+
+    -- Tabela de métricas de CPU
+    CREATE TABLE IF NOT EXISTS cpu_metrics (
+        metric_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        cpu_percent FLOAT NOT NULL,
+        per_cpu_percent JSONB,
+        load_avg_1min FLOAT,
+        load_avg_5min FLOAT,
+        load_avg_15min FLOAT,
+        cpu_times JSONB
+    );
+
+    -- Tabela de métricas de memória
+    CREATE TABLE IF NOT EXISTS memory_metrics (
+        metric_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        percent FLOAT NOT NULL,
+        total_gb FLOAT NOT NULL,
+        used_gb FLOAT NOT NULL,
+        free_gb FLOAT NOT NULL,
+        swap_percent FLOAT,
+        swap_total_gb FLOAT,
+        swap_used_gb FLOAT,
+        swap_free_gb FLOAT
+    );
+
+    -- Tabela de métricas de disco
+    CREATE TABLE IF NOT EXISTS disk_metrics (
+        metric_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        device VARCHAR(255) NOT NULL,
+        mountpoint VARCHAR(255) NOT NULL,
+        fstype VARCHAR(50),
+        percent FLOAT NOT NULL,
+        total_gb FLOAT NOT NULL,
+        used_gb FLOAT NOT NULL,
+        free_gb FLOAT NOT NULL
+    );
+
+    -- Tabela de métricas de rede
+    CREATE TABLE IF NOT EXISTS network_metrics (
+        metric_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        interface_name VARCHAR(255) NOT NULL,
+        bytes_sent BIGINT,
+        bytes_recv BIGINT,
+        packets_sent BIGINT,
+        packets_recv BIGINT,
+        errin BIGINT,
+        errout BIGINT,
+        dropin BIGINT,
+        dropout BIGINT
+    );
+
+    -- Tabela de métricas de temperatura
+    CREATE TABLE IF NOT EXISTS temperature_metrics (
+        metric_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        sensor_name VARCHAR(255) NOT NULL,
+        temperature FLOAT NOT NULL,
+        high_threshold FLOAT,
+        critical_threshold FLOAT
+    );
+
+    -- Tabela de informações de rede
+    CREATE TABLE IF NOT EXISTS network_info (
+        info_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        public_ip VARCHAR(45),
+        private_ip VARCHAR(45),
+        asn VARCHAR(50),
+        organization VARCHAR(255),
+        country VARCHAR(50),
+        region VARCHAR(100),
+        city VARCHAR(100),
+        last_asn_update TIMESTAMP WITH TIME ZONE
+    );
+
+    -- Tabela de status do NoIP DUC
+    CREATE TABLE IF NOT EXISTS noip_duc_status (
+        status_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        installed BOOLEAN,
+        running BOOLEAN,
+        service_active BOOLEAN,
+        version VARCHAR(50),
+        install_path VARCHAR(255),
+        last_update TIMESTAMP WITH TIME ZONE
+    );
+
+    -- Tabela de verificação de portas
+    CREATE TABLE IF NOT EXISTS port_checks (
+        check_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        target_name VARCHAR(255),
+        host VARCHAR(255) NOT NULL,
+        port INTEGER NOT NULL,
+        protocol VARCHAR(10) NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        response_time_ms FLOAT
+    );
+
+    -- Tabela de comandos para agentes
+    CREATE TABLE IF NOT EXISTS agent_commands (
+        command_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        command_type VARCHAR(50) NOT NULL,
+        command_data JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        sent_at TIMESTAMP WITH TIME ZONE,
+        acknowledged_at TIMESTAMP WITH TIME ZONE,
+        status VARCHAR(50) DEFAULT 'pending',
+        result JSONB
+    );
+
+    -- Tabela de alertas
+    CREATE TABLE IF NOT EXISTS alerts (
+        alert_id BIGSERIAL PRIMARY KEY,
+        agent_id UUID NOT NULL REFERENCES agents(agent_id),
+        alert_type VARCHAR(50) NOT NULL,
+        severity VARCHAR(20) NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        resolved_at TIMESTAMP WITH TIME ZONE,
+        status VARCHAR(20) DEFAULT 'active',
+        metric_value FLOAT,
+        threshold_value FLOAT
+    );
+
+    -- View para métricas mais recentes
+    CREATE OR REPLACE VIEW latest_metrics AS
+    WITH latest_cpu AS (
+        SELECT DISTINCT ON (agent_id)
+            agent_id,
+            timestamp,
+            cpu_percent,
+            load_avg_1min,
+            load_avg_5min,
+            load_avg_15min
+        FROM cpu_metrics
+        ORDER BY agent_id, timestamp DESC
+    ),
+    latest_memory AS (
+        SELECT DISTINCT ON (agent_id)
+            agent_id,
+            timestamp,
+            percent AS memory_percent,
+            total_gb AS memory_total_gb,
+            used_gb AS memory_used_gb,
+            free_gb AS memory_free_gb
+        FROM memory_metrics
+        ORDER BY agent_id, timestamp DESC
+    ),
+    latest_network_info AS (
+        SELECT DISTINCT ON (agent_id)
+            agent_id,
+            timestamp,
+            public_ip,
+            private_ip,
+            asn,
+            organization,
+            country,
+            region,
+            city
+        FROM network_info
+        ORDER BY agent_id, timestamp DESC
+    ),
+    latest_noip AS (
+        SELECT DISTINCT ON (agent_id)
+            agent_id,
+            timestamp,
+            installed,
+            running,
+            service_active,
+            version,
+            install_path,
+            last_update
+        FROM noip_duc_status
+        ORDER BY agent_id, timestamp DESC
+    )
+    SELECT
+        a.agent_id,
+        a.hostname,
+        a.agent_version,
+        a.first_seen,
+        a.last_seen,
+        a.is_active,
+        c.cpu_percent,
+        c.load_avg_1min,
+        c.load_avg_5min,
+        c.load_avg_15min,
+        m.memory_percent,
+        m.memory_total_gb,
+        m.memory_used_gb,
+        m.memory_free_gb,
+        n.public_ip,
+        n.private_ip,
+        n.asn,
+        n.organization,
+        n.country,
+        n.region,
+        n.city,
+        d.installed AS noip_installed,
+        d.running AS noip_running,
+        d.service_active AS noip_service_active,
+        d.version AS noip_version,
+        d.install_path AS noip_install_path,
+        d.last_update AS noip_last_update
+    FROM agents a
+    LEFT JOIN latest_cpu c ON a.agent_id = c.agent_id
+    LEFT JOIN latest_memory m ON a.agent_id = m.agent_id
+    LEFT JOIN latest_network_info n ON a.agent_id = n.agent_id
+    LEFT JOIN latest_noip d ON a.agent_id = d.agent_id;
+
+    -- Procedimento para processar dados do agente
+    CREATE OR REPLACE PROCEDURE process_agent_data(data JSONB)
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+        agent_id UUID;
+        hostname TEXT;
+        timestamp_value TIMESTAMP WITH TIME ZONE;
+        metrics JSONB;
+        network_info JSONB;
+        cpu_data JSONB;
+        memory_data JSONB;
+        disk_data JSONB;
+        network_data JSONB;
+        temperature_data JSONB;
+        noip_duc_data JSONB;
+        port_check_data JSONB;
+        disk_partition JSONB;
+        network_interface TEXT;
+        network_interface_data JSONB;
+        sensor_name TEXT;
+        sensor_data JSONB;
+        port_target JSONB;
+    BEGIN
+        -- Extrair dados básicos
+        hostname := data->>'hostname';
+        timestamp_value := to_timestamp((data->>'timestamp')::float);
+        metrics := data->'metrics';
+        network_info := data->'network_info';
+        
+        -- Verificar se o agente já existe
+        SELECT a.agent_id INTO agent_id FROM agents a WHERE a.hostname = hostname;
+        
+        -- Se o agente não existir, criar um novo
+        IF agent_id IS NULL THEN
+            INSERT INTO agents (hostname, first_seen, last_seen)
+            VALUES (hostname, timestamp_value, timestamp_value)
+            RETURNING agents.agent_id INTO agent_id;
+        ELSE
+            -- Atualizar timestamp de última visita
+            UPDATE agents SET last_seen = timestamp_value, is_active = TRUE WHERE agent_id = agent_id;
+        END IF;
+        
+        -- Processar informações de rede
+        IF network_info IS NOT NULL AND network_info->>'public_ip' IS NOT NULL THEN
+            INSERT INTO network_info (
+                agent_id, timestamp, public_ip, private_ip, asn, organization, country, region, city
+            )
+            VALUES (
+                agent_id,
+                timestamp_value,
+                network_info->>'public_ip',
+                network_info->>'private_ip',
+                network_info->'asn_info'->>'asn',
+                network_info->'asn_info'->>'organization',
+                network_info->'asn_info'->>'country',
+                network_info->'asn_info'->>'region',
+                network_info->'asn_info'->>'city'
+            );
+        END IF;
+        
+        -- Processar métricas de CPU
+        cpu_data := metrics->'cpu';
+        IF cpu_data IS NOT NULL AND cpu_data->>'percent' IS NOT NULL THEN
+            INSERT INTO cpu_metrics (
+                agent_id, timestamp, cpu_percent, per_cpu_percent, 
+                load_avg_1min, load_avg_5min, load_avg_15min, cpu_times
+            )
+            VALUES (
+                agent_id,
+                timestamp_value,
+                (cpu_data->>'percent')::float,
+                cpu_data->'per_cpu_percent',
+                (cpu_data->'load_avg'->>'1min')::float,
+                (cpu_data->'load_avg'->>'5min')::float,
+                (cpu_data->'load_avg'->>'15min')::float,
+                cpu_data->'times'
+            );
+        END IF;
+        
+        -- Processar métricas de memória
+        memory_data := metrics->'memory';
+        IF memory_data IS NOT NULL AND memory_data->>'percent' IS NOT NULL THEN
+            INSERT INTO memory_metrics (
+                agent_id, timestamp, percent, total_gb, used_gb, free_gb,
+                swap_percent, swap_total_gb, swap_used_gb, swap_free_gb
+            )
+            VALUES (
+                agent_id,
+                timestamp_value,
+                (memory_data->>'percent')::float,
+                (memory_data->>'total_gb')::float,
+                (memory_data->>'used_gb')::float,
+                (memory_data->>'free_gb')::float,
+                (memory_data->'swap'->>'percent')::float,
+                (memory_data->'swap'->>'total_gb')::float,
+                (memory_data->'swap'->>'used_gb')::float,
+                (memory_data->'swap'->>'free_gb')::float
+            );
+        END IF;
+        
+        -- Processar métricas de disco
+        disk_data := metrics->'disk';
+        IF disk_data IS NOT NULL AND disk_data->'partitions' IS NOT NULL THEN
+            FOR disk_partition IN SELECT * FROM jsonb_array_elements(disk_data->'partitions')
+            LOOP
+                INSERT INTO disk_metrics (
+                    agent_id, timestamp, device, mountpoint, fstype, 
+                    percent, total_gb, used_gb, free_gb
+                )
+                VALUES (
+                    agent_id,
+                    timestamp_value,
+                    disk_partition->>'device',
+                    disk_partition->>'mountpoint',
+                    disk_partition->>'fstype',
+                    (disk_partition->>'percent')::float,
+                    (disk_partition->>'total_gb')::float,
+                    (disk_partition->>'used_gb')::float,
+                    (disk_partition->>'free_gb')::float
+                );
+            END LOOP;
+        END IF;
+        
+        -- Processar métricas de rede
+        network_data := metrics->'network';
+        IF network_data IS NOT NULL AND network_data->'io_counters' IS NOT NULL THEN
+            FOR network_interface, network_interface_data IN SELECT * FROM jsonb_each(network_data->'io_counters')
+            LOOP
+                INSERT INTO network_metrics (
+                    agent_id, timestamp, interface_name, bytes_sent, bytes_recv,
+                    packets_sent, packets_recv, errin, errout, dropin, dropout
+                )
+                VALUES (
+                    agent_id,
+                    timestamp_value,
+                    network_interface,
+                    (network_interface_data->>'bytes_sent')::bigint,
+                    (network_interface_data->>'bytes_recv')::bigint,
+                    (network_interface_data->>'packets_sent')::bigint,
+                    (network_interface_data->>'packets_recv')::bigint,
+                    (network_interface_data->>'errin')::bigint,
+                    (network_interface_data->>'errout')::bigint,
+                    (network_interface_data->>'dropin')::bigint,
+                    (network_interface_data->>'dropout')::bigint
+                );
+            END LOOP;
+        END IF;
+        
+        -- Processar métricas de temperatura
+        temperature_data := metrics->'temperature';
+        IF temperature_data IS NOT NULL AND temperature_data->'sensors' IS NOT NULL THEN
+            FOR sensor_name, sensor_data IN SELECT * FROM jsonb_each(temperature_data->'sensors')
+            LOOP
+                IF jsonb_array_length(sensor_data) > 0 THEN
+                    FOR sensor_data IN SELECT * FROM jsonb_array_elements(sensor_data)
+                    LOOP
+                        INSERT INTO temperature_metrics (
+                            agent_id, timestamp, sensor_name, temperature, 
+                            high_threshold, critical_threshold
+                        )
+                        VALUES (
+                            agent_id,
+                            timestamp_value,
+                            sensor_data->>'label',
+                            (sensor_data->>'current')::float,
+                            (sensor_data->>'high')::float,
+                            (sensor_data->>'critical')::float
+                        );
+                    END LOOP;
+                END IF;
+            END LOOP;
+        END IF;
+        
+        -- Processar status do NoIP DUC
+        noip_duc_data := metrics->'noip_duc';
+        IF noip_duc_data IS NOT NULL THEN
+            INSERT INTO noip_duc_status (
+                agent_id, timestamp, installed, running, service_active,
+                version, install_path, last_update
+            )
+            VALUES (
+                agent_id,
+                timestamp_value,
+                (noip_duc_data->>'installed')::boolean,
+                (noip_duc_data->>'running')::boolean,
+                (noip_duc_data->>'service_active')::boolean,
+                noip_duc_data->>'version',
+                noip_duc_data->>'install_path',
+                CASE 
+                    WHEN noip_duc_data->>'last_update' IS NOT NULL 
+                    THEN to_timestamp((noip_duc_data->>'last_update')::float)
+                    ELSE NULL
+                END
+            );
+        END IF;
+        
+        -- Processar verificações de porta
+        port_check_data := metrics->'port_check';
+        IF port_check_data IS NOT NULL AND port_check_data->'targets' IS NOT NULL THEN
+            FOR port_target IN SELECT * FROM jsonb_array_elements(port_check_data->'targets')
+            LOOP
+                INSERT INTO port_checks (
+                    agent_id, timestamp, target_name, host, port, 
+                    protocol, status, response_time_ms
+                )
+                VALUES (
+                    agent_id,
+                    timestamp_value,
+                    port_target->>'name',
+                    port_target->>'host',
+                    (port_target->>'port')::integer,
+                    port_target->>'protocol',
+                    port_target->>'status',
+                    (port_target->>'response_time')::float
+                );
+            END LOOP;
+        END IF;
+        
+        -- Verificar condições de alerta
+        -- CPU alto
+        IF cpu_data IS NOT NULL AND (cpu_data->>'percent')::float > 90 THEN
+            INSERT INTO alerts (
+                agent_id, alert_type, severity, message, metric_value, threshold_value
+            )
+            VALUES (
+                agent_id,
+                'high_cpu',
+                'warning',
+                'CPU usage is above 90%',
+                (cpu_data->>'percent')::float,
+                90
+            );
+        END IF;
+        
+        -- Memória alta
+        IF memory_data IS NOT NULL AND (memory_data->>'percent')::float > 90 THEN
+            INSERT INTO alerts (
+                agent_id, alert_type, severity, message, metric_value, threshold_value
+            )
+            VALUES (
+                agent_id,
+                'high_memory',
+                'warning',
+                'Memory usage is above 90%',
+                (memory_data->>'percent')::float,
+                90
+            );
+        END IF;
+        
+        -- Disco cheio
+        IF disk_data IS NOT NULL AND disk_data->'partitions' IS NOT NULL THEN
+            FOR disk_partition IN SELECT * FROM jsonb_array_elements(disk_data->'partitions')
+            LOOP
+                IF (disk_partition->>'percent')::float > 90 THEN
+                    INSERT INTO alerts (
+                        agent_id, alert_type, severity, message, metric_value, threshold_value
+                    )
+                    VALUES (
+                        agent_id,
+                        'disk_full',
+                        'warning',
+                        'Disk ' || disk_partition->>'mountpoint' || ' is above 90% full',
+                        (disk_partition->>'percent')::float,
+                        90
+                    );
+                END IF;
+            END LOOP;
+        END IF;
+        
+        -- Falha na verificação de porta
+        IF port_check_data IS NOT NULL AND port_check_data->'targets' IS NOT NULL THEN
+            FOR port_target IN SELECT * FROM jsonb_array_elements(port_check_data->'targets')
+            LOOP
+                IF port_target->>'status' != 'open' THEN
+                    INSERT INTO alerts (
+                        agent_id, alert_type, severity, message
+                    )
+                    VALUES (
+                        agent_id,
+                        'port_check_failed',
+                        'warning',
+                        'Port check failed for ' || port_target->>'name' || ' (' || 
+                        port_target->>'host' || ':' || port_target->>'port' || '/' || 
+                        port_target->>'protocol' || ') - Status: ' || port_target->>'status'
+                    );
+                END IF;
+            END LOOP;
+        END IF;
+    END;
+    $$;
+
+    -- Função para atualizar status de alertas
+    CREATE OR REPLACE FUNCTION update_alert_status()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        -- Verificar se o alerta já foi resolvido
+        IF EXISTS (
+            SELECT 1 FROM alerts 
+            WHERE alert_id = NEW.alert_id AND status = 'resolved'
+        ) THEN
+            RETURN NEW;
+        END IF;
+        
+        -- Verificar condições para resolver o alerta
+        CASE NEW.alert_type
+            WHEN 'high_cpu' THEN
+                IF EXISTS (
+                    SELECT 1 FROM cpu_metrics 
+                    WHERE agent_id = NEW.agent_id 
+                    AND timestamp > NEW.created_at
+                    AND cpu_percent < NEW.threshold_value
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ) THEN
+                    UPDATE alerts 
+                    SET status = 'resolved', resolved_at = NOW() 
+                    WHERE alert_id = NEW.alert_id;
+                END IF;
+                
+            WHEN 'high_memory' THEN
+                IF EXISTS (
+                    SELECT 1 FROM memory_metrics 
+                    WHERE agent_id = NEW.agent_id 
+                    AND timestamp > NEW.created_at
+                    AND percent < NEW.threshold_value
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ) THEN
+                    UPDATE alerts 
+                    SET status = 'resolved', resolved_at = NOW() 
+                    WHERE alert_id = NEW.alert_id;
+                END IF;
+                
+            WHEN 'disk_full' THEN
+                -- Extrair o mountpoint da mensagem
+                DECLARE
+                    mountpoint TEXT;
+                BEGIN
+                    mountpoint := substring(NEW.message FROM 'Disk (.*) is above');
+                    
+                    IF EXISTS (
+                        SELECT 1 FROM disk_metrics 
+                        WHERE agent_id = NEW.agent_id 
+                        AND timestamp > NEW.created_at
+                        AND mountpoint = mountpoint
+                        AND percent < NEW.threshold_value
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ) THEN
+                        UPDATE alerts 
+                        SET status = 'resolved', resolved_at = NOW() 
+                        WHERE alert_id = NEW.alert_id;
+                    END IF;
+                END;
+                
+            WHEN 'port_check_failed' THEN
+                -- Extrair o nome do check da mensagem
+                DECLARE
+                    check_name TEXT;
+                BEGIN
+                    check_name := substring(NEW.message FROM 'failed for (.*) \(');
+                    
+                    IF EXISTS (
+                        SELECT 1 FROM port_checks 
+                        WHERE agent_id = NEW.agent_id 
+                        AND timestamp > NEW.created_at
+                        AND target_name = check_name
+                        AND status = 'open'
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    ) THEN
+                        UPDATE alerts 
+                        SET status = 'resolved', resolved_at = NOW() 
+                        WHERE alert_id = NEW.alert_id;
+                    END IF;
+                END;
+                
+            ELSE
+                -- Outros tipos de alerta
+                NULL;
+        END CASE;
+        
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    -- Trigger para atualizar status de alertas
+    CREATE TRIGGER update_alert_status_trigger
+    AFTER INSERT ON alerts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_alert_status();
+
+    -- Função para limpar dados antigos (retenção de dados)
+    CREATE OR REPLACE FUNCTION cleanup_old_data()
+    RETURNS void AS $$
+    DECLARE
+        retention_days INTEGER := 30; -- Dias para manter os dados
+        retention_timestamp TIMESTAMP WITH TIME ZONE;
+    BEGIN
+        retention_timestamp := NOW() - (retention_days * INTERVAL '1 day');
+        
+        -- Limpar métricas antigas
+        DELETE FROM cpu_metrics WHERE timestamp < retention_timestamp;
+        DELETE FROM memory_metrics WHERE timestamp < retention_timestamp;
+        DELETE FROM disk_metrics WHERE timestamp < retention_timestamp;
+        DELETE FROM network_metrics WHERE timestamp < retention_timestamp;
+        DELETE FROM temperature_metrics WHERE timestamp < retention_timestamp;
+        DELETE FROM port_checks WHERE timestamp < retention_timestamp;
+        
+        -- Manter apenas os últimos 100 registros de informações de rede por agente
+        DELETE FROM network_info
+        WHERE info_id NOT IN (
+            SELECT info_id
+            FROM (
+                SELECT info_id, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY timestamp DESC) as rn
+                FROM network_info
+            ) t
+            WHERE rn <= 100
+        );
+        
+        -- Manter apenas os últimos 100 registros de status do NoIP DUC por agente
+        DELETE FROM noip_duc_status
+        WHERE status_id NOT IN (
+            SELECT status_id
+            FROM (
+                SELECT status_id, ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY timestamp DESC) as rn
+                FROM noip_duc_status
+            ) t
+            WHERE rn <= 100
+        );
+        
+        -- Manter alertas resolvidos por 90 dias
+        DELETE FROM alerts 
+        WHERE status = 'resolved' 
+        AND resolved_at < (NOW() - (90 * INTERVAL '1 day'));
+        
+        -- Manter comandos por 90 dias
+        DELETE FROM agent_commands
+        WHERE created_at < (NOW() - (90 * INTERVAL '1 day'));
+    END;
+    $$ LANGUAGE plpgsql;
+
+    -- Criar um job para executar a limpeza diariamente
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    SELECT cron.schedule('0 3 * * *', 'SELECT cleanup_old_data()');

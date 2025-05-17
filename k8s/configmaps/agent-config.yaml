@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: monitoring-dashboard
+data:
+  config.yaml: |
+    # Configuração do Agente de Monitoramento
+
+    # Configurações gerais
+    general:
+      hostname_override: null  # Deixe null para usar o hostname do sistema
+      collection_interval: 10  # Intervalo de coleta em segundos
+      log_level: "INFO"        # Níveis: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+    # Configurações do RabbitMQ
+    rabbitmq:
+      host: "rabbitmq"
+      port: 5672
+      user: "${RABBITMQ_USER}"
+      password: "${RABBITMQ_PASSWORD}"
+      vhost: "/"
+      data_queue: "agent_data"
+      command_queue: "agent_commands"
+      heartbeat: 600
+      connection_timeout: 300
+
+    # Configurações de métricas
+    metrics:
+      # CPU
+      cpu:
+        enabled: true
+        collect_per_cpu: true
+        collect_cpu_times: true
+        collect_load_avg: true
+
+      # Memória
+      memory:
+        enabled: true
+        collect_swap: true
+        collect_virtual: true
+
+      # Disco
+      disk:
+        enabled: true
+        paths:
+          - "/"
+          - "/home"
+        collect_io_counters: true
+        ignore_mounts:
+          - "/proc"
+          - "/sys"
+          - "/dev"
+          - "/run"
+          - "/boot"
+          - "/tmp"
+
+      # Rede
+      network:
+        enabled: true
+        collect_io_counters: true
+        collect_connections: true
+        collect_interfaces: true
+        ignore_interfaces:
+          - "lo"
+          - "docker0"
+          - "veth"
+
+      # Temperatura (se disponível)
+      temperature:
+        enabled: true
+        collect_sensors: true
+
+      # Processos
+      processes:
+        enabled: true
+        collect_top_processes: 10  # Número de processos com maior uso de CPU/memória
+        watch_processes:
+          - name: "noip-duc"
+            check_running: true
+
+    # Configurações de rede
+    network_info:
+      collect_public_ip: true
+      collect_private_ip: true
+      collect_asn_info: true
+      public_ip_service: "https://api.ipify.org"
+      asn_info_service: "https://ipinfo.io/{ip}/json"
+      update_interval: 3600  # Intervalo em segundos para atualizar informações de ASN (1 hora)
+
+    # Configurações de NoIP DUC
+    noip_duc:
+      enabled: true
+      check_installed: true
+      check_running: true
+      check_service: true
+      possible_paths:
+        - "C:\\Program Files\\No-IP"
+        - "C:\\Program Files (x86)\\No-IP"
+        - "/usr/local/bin/noip"
+        - "/usr/bin/noip"
+
+    # Configurações de portas
+    port_check:
+      enabled: true
+      interval: 300  # Intervalo em segundos para verificar portas (5 minutos)
+      timeout: 5     # Timeout em segundos para cada verificação
+      targets:
+        - host: "google.com"
+          port: 443
+          protocol: "tcp"
+          name: "Google HTTPS"
+        - host: "8.8.8.8"
+          port: 53
+          protocol: "udp"
+          name: "Google DNS"
+        - host: "rabbitmq"
+          port: 5672
+          protocol: "tcp"
+          name: "RabbitMQ"
+
+    # Configurações de logging
+    logging:
+      file:
+        enabled: true
+        path: "logs/agent.log"
+        max_size_mb: 10
+        backup_count: 5
+      console:
+        enabled: true
+        colored: true

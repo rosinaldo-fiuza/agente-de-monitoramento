@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Monitoramento</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Dashboard</h1>
+                <p>Monitoramento</p>
+            </div>
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="active"><a href="#"><i class="fas fa-tachometer-alt"></i> Visão Geral</a></li>
+                    <li><a href="#"><i class="fas fa-microchip"></i> CPU</a></li>
+                    <li><a href="#"><i class="fas fa-memory"></i> Memória</a></li>
+                    <li><a href="#"><i class="fas fa-hdd"></i> Disco</a></li>
+                    <li><a href="#"><i class="fas fa-network-wired"></i> Rede</a></li>
+                    <li><a href="#"><i class="fas fa-thermometer-half"></i> Temperatura</a></li>
+                    <li><a href="#"><i class="fas fa-server"></i> Servidores</a></li>
+                    <li><a href="#"><i class="fas fa-cog"></i> Configurações</a></li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <p>v1.0.0</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="main-header">
+                <div class="header-left">
+                    <button id="sidebar-toggle" class="sidebar-toggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2>Visão Geral</h2>
+                </div>
+                <div class="header-right">
+                    <div class="refresh-control">
+                        <span>Atualização: </span>
+                        <select id="refresh-interval">
+                            <option value="0">Manual</option>
+                            <option value="5" selected>5s</option>
+                            <option value="10">10s</option>
+                            <option value="30">30s</option>
+                            <option value="60">1min</option>
+                        </select>
+                        <button id="refresh-now" class="btn btn-icon">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="user-info">
+                        <span>Admin</span>
+                        <img src="img/avatar.png" alt="Avatar" class="avatar">
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard">
+                <!-- Status Cards -->
+                <section class="status-cards">
+                    <div class="card" id="agents-card">
+                        <div class="card-icon">
+                            <i class="fas fa-desktop"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Agentes</h3>
+                            <p class="card-value">0</p>
+                            <p class="card-status">Ativos</p>
+                        </div>
+                    </div>
+                    <div class="card" id="cpu-card">
+                        <div class="card-icon">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>CPU</h3>
+                            <p class="card-value">0%</p>
+                            <p class="card-status">Média</p>
+                        </div>
+                    </div>
+                    <div class="card" id="memory-card">
+                        <div class="card-icon">
+                            <i class="fas fa-memory"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Memória</h3>
+                            <p class="card-value">0%</p>
+                            <p class="card-status">Em uso</p>
+                        </div>
+                    </div>
+                    <div class="card" id="disk-card">
+                        <div class="card-icon">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Disco</h3>
+                            <p class="card-value">0%</p>
+                            <p class="card-status">Em uso</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Network Info -->
+                <section class="network-info">
+                    <div class="card full-width">
+                        <div class="card-header">
+                            <h3><i class="fas fa-network-wired"></i> Informações de Rede</h3>
+                            <button id="update-asn" class="btn btn-primary">
+                                <i class="fas fa-sync-alt"></i> Atualizar ASN
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="info-label">IP Público:</span>
+                                    <span class="info-value" id="public-ip">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">IP Privado:</span>
+                                    <span class="info-value" id="private-ip">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">ASN:</span>
+                                    <span class="info-value" id="asn">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Organização:</span>
+                                    <span class="info-value" id="organization">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Localização:</span>
+                                    <span class="info-value" id="location">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Última Atualização:</span>
+                                    <span class="info-value" id="last-update">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Charts -->
+                <section class="charts">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line"></i> CPU (Últimas 24h)</h3>
+                            <div class="card-actions">
+                                <select id="cpu-chart-interval">
+                                    <option value="1h">1 hora</option>
+                                    <option value="6h">6 horas</option>
+                                    <option value="24h" selected>24 horas</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="cpu-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line"></i> Memória (Últimas 24h)</h3>
+                            <div class="card-actions">
+                                <select id="memory-chart-interval">
+                                    <option value="1h">1 hora</option>
+                                    <option value="6h">6 horas</option>
+                                    <option value="24h" selected>24 horas</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="memory-chart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Agent List -->
+                <section class="agent-list">
+                    <div class="card full-width">
+                        <div class="card-header">
+                            <h3><i class="fas fa-desktop"></i> Agentes</h3>
+                            <div class="card-actions">
+                                <input type="text" id="agent-search" placeholder="Buscar agente...">
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <table id="agents-table">
+                                <thead>
+                                    <tr>
+                                        <th>Hostname</th>
+                                        <th>IP</th>
+                                        <th>CPU</th>
+                                        <th>Memória</th>
+                                        <th>Última Atualização</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="agents-table-body">
+                                    <!-- Dados dos agentes serão inseridos aqui via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- NoIP DUC Status -->
+                <section class="noip-status">
+                    <div class="card full-width">
+                        <div class="card-header">
+                            <h3><i class="fas fa-globe"></i> Status do NoIP DUC</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="info-label">Instalado:</span>
+                                    <span class="info-value" id="noip-installed">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Em Execução:</span>
+                                    <span class="info-value" id="noip-running">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Serviço Ativo:</span>
+                                    <span class="info-value" id="noip-service">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Versão:</span>
+                                    <span class="info-value" id="noip-version">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Caminho:</span>
+                                    <span class="info-value" id="noip-path">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Última Atualização:</span>
+                                    <span class="info-value" id="noip-last-update">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <footer class="main-footer">
+                <p>&copy; 2023 Dashboard de Monitoramento. Todos os direitos reservados.</p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Título do Modal</h3>
+                <button id="modal-close" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Conteúdo do modal será inserido aqui via JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel" class="btn">Cancelar</button>
+                <button id="modal-confirm" class="btn btn-primary">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
